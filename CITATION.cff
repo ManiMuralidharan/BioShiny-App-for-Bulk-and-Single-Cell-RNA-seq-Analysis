@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use BioShiny in your research, please cite it as below."
+type: software
+title: "BioShiny: a modular R Shiny application for bulk and single-cell RNA-seq analysis"
+abstract: >-
+  BioShiny is a modular R Shiny application for interactive RNA-seq analysis.
+  The bulk workflow covers data import and validation, quality control,
+  normalisation (TMM, RLE, VST), ComBat-Seq batch correction, differential
+  expression (DESeq2, edgeR, limma-voom), GO/KEGG enrichment and GSEA, and a
+  rendered HTML report. The single-cell workflow covers Seurat QC, clustering
+  and marker detection, Slingshot trajectory inference and CellChat
+  cell-cell communication analysis.
+authors:
+  - family-names: Mani
+    given-names: Muralidharan
+    affiliation: "University of Wisconsin-Madison"
+    orcid: "https://orcid.org/0000-0002-1194-3616"
+version: 1.0.0
+date-released: 2026-10-12
+license: MIT
+repository-code: "https://github.com/ManiMuralidharan/BioShiny"
+keywords:
+  - RNA-seq
+  - single-cell RNA-seq
+  - differential expression
+  - R Shiny
+  - Bioconductor
+  - Seurat
