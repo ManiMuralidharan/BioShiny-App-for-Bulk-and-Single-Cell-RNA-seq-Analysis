@@ -1,0 +1,105 @@
+---
+title: "`r params$title`"
+author: "`r params$author`"
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+    self_contained: true
+params:
+  results: ""
+  title: "RNA-seq analysis report"
+  author: ""
+  notes: ""
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE, fig.width = 8, fig.height = 5)
+library(ggplot2)
+r <- readRDS(params$results)
+grp_col <- if (!is.null(r$de_info)) r$de_info$factor else if ("condition" %in% colnames(r$meta)) "condition" else colnames(r$meta)[2]
+grp <- factor(r$meta[[grp_col]])
+pca_plot <- function(m, title) {
+  m <- as.matrix(m); v <- apply(m, 1, var)
+  keep <- head(order(v, decreasing = TRUE), min(500, sum(v > 0)))
+  p <- prcomp(t(m[keep, ])); ve <- round(100 * p$sdev^2 / sum(p$sdev^2), 1)
+  df <- data.frame(PC1 = p$x[, 1], PC2 = p$x[, 2], group = grp, sample = colnames(m))
+  ggplot(df, aes(PC1, PC2, colour = group)) + geom_point(size = 4) + theme_bw() +
+    labs(title = title, x = sprintf("PC1 (%s%%)", ve[1]), y = sprintf("PC2 (%s%%)", ve[2]), colour = grp_col)
+}
+```
+
+`r if (nzchar(params$notes)) paste("**Notes:**", params$notes)`
+
+# Data
+
+- Genes analysed (after low-count filtering): **`r nrow(r$counts)`**
+- Samples: **`r ncol(r$counts)`**
+- Organism: `r r$organism`
+
+```{r}
+knitr::kable(r$meta, row.names = FALSE)
+```
+
+# Quality control
+
+```{r}
+df <- data.frame(sample = colnames(r$counts), M = colSums(r$counts) / 1e6, group = grp)
+ggplot(df, aes(sample, M, fill = group)) + geom_col() + theme_bw() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + labs(y = "Reads (millions)", x = NULL, title = "Library size")
+pca_plot(log2(r$counts + 1), "PCA, log2(count + 1)")
+```
+
+```{r, eval = !is.null(r$norm), results = "asis"}
+cat("# Normalisation\n\nMethod: **", r$norm_method, "**\n\n", sep = "")
+```
+
+```{r, eval = !is.null(r$norm)}
+pca_plot(r$norm, paste("PCA,", r$norm_method))
+```
+
+```{r, eval = !is.null(r$batch_info), results = "asis"}
+cat("# Batch correction\n\nComBat-Seq was applied for **", r$batch_info["batch"], "**, preserving **",
+    r$batch_info["group"], "**. Corrected counts were used for normalised-matrix plots only; DE used raw counts.\n", sep = "")
+```
+
+```{r, eval = !is.null(r$de), results = "asis"}
+i <- r$de_info
+d <- r$de
+d$status <- ifelse(!is.na(d$padj) & d$padj < r$fdr & d$log2FoldChange > r$lfc, "Up",
+            ifelse(!is.na(d$padj) & d$padj < r$fdr & d$log2FoldChange < -r$lfc, "Down", "NS"))
+cat("# Differential expression\n\n")
+cat(sprintf("- Method: **%s**\n- Comparison: **%s**: %s vs %s (reference)\n- Covariates: %s\n- Thresholds: FDR < %s, |log2FC| > %s\n- **Up: %d, Down: %d**\n\n",
+    i$method, i$factor, i$test, i$ref, if (length(i$covars)) paste(i$covars, collapse = ", ") else "none",
+    r$fdr, r$lfc, sum(d$status == "Up"), sum(d$status == "Down")))
+```
+
+```{r, eval = !is.null(r$de)}
+ggplot(subset(d, !is.na(pvalue)), aes(log2FoldChange, -log10(pvalue), colour = status)) +
+  geom_point(alpha = 0.6, size = 1) + theme_bw() +
+  scale_colour_manual(values = c(Up = "#b2182b", Down = "#2166ac", NS = "grey75")) +
+  geom_vline(xintercept = c(-r$lfc, r$lfc), linetype = "dashed") + labs(title = "Volcano plot", colour = NULL)
+top <- head(d[d$status != "NS", c("gene", "baseMean", "log2FoldChange", "pvalue", "padj")], 30)
+knitr::kable(top, digits = 3, row.names = FALSE, caption = "Top 30 significant genes")
+```
+
+```{r, eval = !is.null(r$de) && !is.null(r$norm) && sum(d$status != "NS") >= 2, fig.height = 9}
+g <- intersect(head(d$gene[d$status != "NS"], 50), rownames(r$norm))
+pheatmap::pheatmap(r$norm[g, , drop = FALSE], scale = "row", fontsize_row = 6,
+                   annotation_col = data.frame(group = grp, row.names = colnames(r$norm)),
+                   color = colorRampPalette(c("#2166ac", "white", "#b2182b"))(100))
+```
+
+```{r, eval = !is.null(r$enrich) && !is.null(r$enrich$res) && nrow(as.data.frame(r$enrich$res)) > 0, fig.height = 7}
+cat("\n")
+print(enrichplot::dotplot(r$enrich$res, showCategory = 20) + ggtitle(paste("Enrichment:", r$enrich$db)))
+knitr::kable(head(as.data.frame(r$enrich$res)[, c("ID", "Description", "p.adjust")], 20), digits = 4, row.names = FALSE)
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```
